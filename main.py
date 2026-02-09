@@ -1024,13 +1024,13 @@ def main() -> None:
             font-size: 12px;
             margin-bottom: 8px;
         }
-        .floating-assistant {
+        div[data-testid="stPopover"] {
             position: fixed;
             right: 18px;
             bottom: 18px;
             z-index: 1000;
         }
-        .floating-assistant button {
+        div[data-testid="stPopover"] > button {
             border-radius: 999px !important;
             width: 44px;
             height: 44px;
@@ -1658,7 +1658,6 @@ def main() -> None:
     else:
         st.info(t(lang, "watchlist_empty"))
 
-    st.markdown('<div class="floating-assistant">', unsafe_allow_html=True)
     with st.popover("⋮"):
         st.caption(t(lang, "assistant_intro"))
         if "assistant_messages" not in st.session_state:
@@ -1672,7 +1671,6 @@ def main() -> None:
             answer = get_help_answer(lang, user_question)
             st.session_state.assistant_messages.append({"role": "assistant", "content": answer})
             st.session_state.assistant_input = ""
-    st.markdown("</div>", unsafe_allow_html=True)
 
     st.subheader(t(lang, "data_notes"))
     st.write(t(lang, "sources"))
