@@ -1027,7 +1027,7 @@ def main() -> None:
         .floating-assistant {
             position: fixed;
             right: 18px;
-            top: 42%;
+            bottom: 18px;
             z-index: 1000;
         }
         .floating-assistant button {
