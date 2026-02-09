@@ -1024,6 +1024,22 @@ def main() -> None:
             font-size: 12px;
             margin-bottom: 8px;
         }
+        .floating-assistant {
+            position: fixed;
+            right: 18px;
+            top: 42%;
+            z-index: 1000;
+        }
+        .floating-assistant button {
+            border-radius: 999px !important;
+            width: 44px;
+            height: 44px;
+            font-size: 22px !important;
+            background: var(--ink);
+            color: #ffffff;
+            border: none;
+            box-shadow: 0 8px 20px var(--shadow);
+        }
         </style>
         <script>
         document.addEventListener("wheel", function(e) {
@@ -1642,7 +1658,8 @@ def main() -> None:
     else:
         st.info(t(lang, "watchlist_empty"))
 
-    with st.expander(t(lang, "assistant_block"), expanded=False):
+    st.markdown('<div class="floating-assistant">', unsafe_allow_html=True)
+    with st.popover("⋮"):
         st.caption(t(lang, "assistant_intro"))
         if "assistant_messages" not in st.session_state:
             st.session_state.assistant_messages = []
@@ -1655,6 +1672,7 @@ def main() -> None:
             answer = get_help_answer(lang, user_question)
             st.session_state.assistant_messages.append({"role": "assistant", "content": answer})
             st.session_state.assistant_input = ""
+    st.markdown("</div>", unsafe_allow_html=True)
 
     st.subheader(t(lang, "data_notes"))
     st.write(t(lang, "sources"))
