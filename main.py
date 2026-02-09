@@ -10,6 +10,7 @@ import requests
 import streamlit as st
 import pydeck as pdk
 import pandas as pd
+import altair as alt
 
 WB_BASE = "https://api.worldbank.org/v2"
 ODS_BASE = "https://public.opendatasoft.com/api/records/1.0/search/"
@@ -110,6 +111,8 @@ I18N = {
         "assistant_intro": "Pregunta sobre funciones o como usar la app.",
         "assistant_placeholder": "Escribe tu pregunta...",
         "assistant_unknown": "No estoy seguro. Prueba con: ranking, mapa, competencia, exportar, series, alertas.",
+        "visual_block": "Visual corporativo",
+        "visual_note": "Imagenes ilustrativas: bandera y centro financiero.",
         "risk_low": "Bajo",
         "risk_medium": "Medio",
         "risk_high": "Alto",
@@ -210,6 +213,8 @@ I18N = {
         "assistant_intro": "Ask about features or how to use the app.",
         "assistant_placeholder": "Type your question...",
         "assistant_unknown": "Not sure. Try: ranking, map, competition, export, series, alerts.",
+        "visual_block": "Corporate visuals",
+        "visual_note": "Illustrative images: flag and financial center.",
         "risk_low": "Low",
         "risk_medium": "Medium",
         "risk_high": "High",
@@ -1018,6 +1023,22 @@ def main() -> None:
             margin-bottom: 8px;
         }
         </style>
+        <script>
+        document.addEventListener("wheel", function(e) {
+            const target = e.target;
+            if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
+                if (target.type === "number" || target.type === "range") {
+                    target.blur();
+                }
+            }
+        }, { passive: true });
+        document.addEventListener("wheel", function(e) {
+            const chartRoot = e.target.closest(".stDeckGlJsonChart, .vega-embed, canvas, svg");
+            if (chartRoot) {
+                e.stopPropagation();
+            }
+        }, { passive: true, capture: true });
+        </script>
         """,
         unsafe_allow_html=True,
     )
@@ -1259,8 +1280,19 @@ def main() -> None:
                     ),
                 }
             )
-        df_compare = pd.DataFrame(compare_rows).set_index("city")
-        st.bar_chart(df_compare[["population", "score"]], use_container_width=True)
+        df_compare = pd.DataFrame(compare_rows)
+        df_long = df_compare.melt(id_vars=["city"], value_vars=["population", "score"], var_name="metric", value_name="value")
+        chart = (
+            alt.Chart(df_long)
+            .mark_bar()
+            .encode(
+                x=alt.X("city:N", sort=None),
+                y=alt.Y("value:Q"),
+                color=alt.Color("metric:N"),
+                tooltip=["city", "metric", "value"],
+            )
+        )
+        st.altair_chart(chart, use_container_width=True)
 
     city_names = []
     city_by_name = {}
@@ -1284,6 +1316,15 @@ def main() -> None:
             for item in st.session_state.watchlist
             if not (item["country"] == selected_name and item["city"] == city_choice)
         ]
+
+    st.subheader(t(lang, "visual_block"))
+    st.caption(t(lang, "visual_note"))
+    flag_url = f"https://flagcdn.com/w160/{selected_iso2.lower()}.png"
+    skyline_query = city_choice.replace(" ", "%20")
+    skyline_url = f"https://source.unsplash.com/featured/900x600/?{skyline_query},skyline,finance"
+    visual1, visual2 = st.columns(2)
+    visual1.image(flag_url, caption=selected_name, use_container_width=True)
+    visual2.image(skyline_url, caption=city_choice, use_container_width=True)
 
     selected_city = city_by_name.get(city_choice)
     city_cost = fetch_city_cost_m2(city_choice, selected_name)
@@ -1436,7 +1477,14 @@ def main() -> None:
                     zoom=11,
                     pitch=0,
                 )
-                st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view, tooltip={"text": "{name}"}))
+                st.pydeck_chart(
+                    pdk.Deck(
+                        layers=layers,
+                        initial_view_state=view,
+                        tooltip={"text": "{name}"},
+                        controller={"scrollZoom": False},
+                    )
+                )
             else:
                 st.info(t(lang, "map_empty"))
         else:
@@ -1492,24 +1540,31 @@ def main() -> None:
                 "year": [y for y, _ in series_gdp],
                 "gdp": [v for _, v in series_gdp],
             }
-        ).set_index("year")
-        st.line_chart(df_series, use_container_width=True)
+        )
+        chart = alt.Chart(df_series).mark_line().encode(x="year:O", y="gdp:Q", tooltip=["year", "gdp"])
+        st.altair_chart(chart, use_container_width=True)
     if series_inflation:
         df_inflation = pd.DataFrame(
             {
                 "year": [y for y, _ in series_inflation],
                 "inflation": [v for _, v in series_inflation],
             }
-        ).set_index("year")
-        st.line_chart(df_inflation, use_container_width=True)
+        )
+        chart = alt.Chart(df_inflation).mark_line(color="#ff7a59").encode(
+            x="year:O", y="inflation:Q", tooltip=["year", "inflation"]
+        )
+        st.altair_chart(chart, use_container_width=True)
     if series_unemployment:
         df_unemployment = pd.DataFrame(
             {
                 "year": [y for y, _ in series_unemployment],
                 "unemployment": [v for _, v in series_unemployment],
             }
-        ).set_index("year")
-        st.line_chart(df_unemployment, use_container_width=True)
+        )
+        chart = alt.Chart(df_unemployment).mark_line(color="#1da1f2").encode(
+            x="year:O", y="unemployment:Q", tooltip=["year", "unemployment"]
+        )
+        st.altair_chart(chart, use_container_width=True)
 
     st.subheader(t(lang, "exports_block"))
     country_rows = [
