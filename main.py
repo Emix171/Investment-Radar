@@ -111,6 +111,7 @@ I18N = {
         "assistant_intro": "Pregunta sobre funciones o como usar la app.",
         "assistant_placeholder": "Escribe tu pregunta...",
         "assistant_unknown": "No estoy seguro. Prueba con: ranking, mapa, competencia, exportar, series, alertas.",
+        "assistant_send": "Enviar",
         "visual_block": "Visual corporativo",
         "visual_note": "Imagenes ilustrativas: bandera y centro financiero.",
         "risk_low": "Bajo",
@@ -213,6 +214,7 @@ I18N = {
         "assistant_intro": "Ask about features or how to use the app.",
         "assistant_placeholder": "Type your question...",
         "assistant_unknown": "Not sure. Try: ranking, map, competition, export, series, alerts.",
+        "assistant_send": "Send",
         "visual_block": "Corporate visuals",
         "visual_note": "Illustrative images: flag and financial center.",
         "risk_low": "Low",
@@ -1647,13 +1649,12 @@ def main() -> None:
     for msg in st.session_state.assistant_messages:
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
-    user_question = st.chat_input(t(lang, "assistant_placeholder"))
-    if user_question:
+    user_question = st.text_input(t(lang, "assistant_placeholder"), key="assistant_input")
+    if st.button(t(lang, "assistant_send"), key="assistant_send") and user_question:
         st.session_state.assistant_messages.append({"role": "user", "content": user_question})
         answer = get_help_answer(lang, user_question)
         st.session_state.assistant_messages.append({"role": "assistant", "content": answer})
-        with st.chat_message("assistant"):
-            st.write(answer)
+        st.session_state.assistant_input = ""
 
     st.subheader(t(lang, "data_notes"))
     st.write(t(lang, "sources"))
