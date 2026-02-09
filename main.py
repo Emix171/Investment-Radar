@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Tuple
 import requests
 import streamlit as st
 import pydeck as pdk
+import pandas as pd
 
 WB_BASE = "https://api.worldbank.org/v2"
 ODS_BASE = "https://public.opendatasoft.com/api/records/1.0/search/"
@@ -88,6 +89,27 @@ I18N = {
         "categories_to_eval": "Categorias a evaluar",
         "table_category": "Categoria",
         "table_competitors": "Competidores",
+        "summary_block": "Resumen ejecutivo",
+        "composite_score": "Score compuesto",
+        "demand_index": "Indice de demanda",
+        "data_quality": "Calidad de datos",
+        "compare_cities": "Comparar ciudades",
+        "radius_km": "Radio de competencia (km)",
+        "heatmap": "Mapa de calor",
+        "watchlist": "Lista de seguimiento",
+        "add_watchlist": "Agregar a seguimiento",
+        "remove_watchlist": "Quitar de seguimiento",
+        "watchlist_empty": "Tu lista esta vacia.",
+        "export_watchlist": "Descargar seguimiento (CSV)",
+        "series_block": "Series historicas",
+        "series_hint": "Ultimos anos disponibles (World Bank).",
+        "recommendations": "Recomendaciones",
+        "recommendation_note": "Categorias con baja competencia y alta demanda.",
+        "city_compare_chart": "Comparativo de ciudades",
+        "assistant_block": "Asistente IA",
+        "assistant_intro": "Pregunta sobre funciones o como usar la app.",
+        "assistant_placeholder": "Escribe tu pregunta...",
+        "assistant_unknown": "No estoy seguro. Prueba con: ranking, mapa, competencia, exportar, series, alertas.",
         "risk_low": "Bajo",
         "risk_medium": "Medio",
         "risk_high": "Alto",
@@ -167,6 +189,27 @@ I18N = {
         "categories_to_eval": "Categories to evaluate",
         "table_category": "Category",
         "table_competitors": "Competitors",
+        "summary_block": "Executive summary",
+        "composite_score": "Composite score",
+        "demand_index": "Demand index",
+        "data_quality": "Data quality",
+        "compare_cities": "Compare cities",
+        "radius_km": "Competition radius (km)",
+        "heatmap": "Heatmap",
+        "watchlist": "Watchlist",
+        "add_watchlist": "Add to watchlist",
+        "remove_watchlist": "Remove from watchlist",
+        "watchlist_empty": "Your watchlist is empty.",
+        "export_watchlist": "Download watchlist (CSV)",
+        "series_block": "Historical series",
+        "series_hint": "Latest available years (World Bank).",
+        "recommendations": "Recommendations",
+        "recommendation_note": "Low competition and high demand categories.",
+        "city_compare_chart": "City comparison",
+        "assistant_block": "AI assistant",
+        "assistant_intro": "Ask about features or how to use the app.",
+        "assistant_placeholder": "Type your question...",
+        "assistant_unknown": "Not sure. Try: ranking, map, competition, export, series, alerts.",
         "risk_low": "Low",
         "risk_medium": "Medium",
         "risk_high": "High",
@@ -612,7 +655,12 @@ def fetch_malls_offices(city: str, country_code: str, lat: Optional[float], lon:
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def fetch_competitors(
-    city: str, country_code: str, category: str, lat: Optional[float], lon: Optional[float]
+    city: str,
+    country_code: str,
+    category: str,
+    lat: Optional[float],
+    lon: Optional[float],
+    radius_m: int,
 ) -> int:
     osm_tag = BUSINESS_OSM_MAP.get(category)
     if osm_tag:
@@ -622,7 +670,7 @@ def fetch_competitors(
         keyword = category.split()[0]
         filter_part = f'["name"~"{keyword}",i]'
     if lat is not None and lon is not None:
-        area_filter = f"(around:15000,{lat},{lon})"
+        area_filter = f"(around:{radius_m},{lat},{lon})"
     else:
         area_filter = f'(area["name"="{city}"]["boundary"="administrative"]["ISO3166-1"="{country_code}"])'
     query = textwrap.dedent(
@@ -645,9 +693,11 @@ def fetch_competitors(
     return 0
 
 
-def build_area_filter(city: str, country_code: str, lat: Optional[float], lon: Optional[float]) -> str:
+def build_area_filter(
+    city: str, country_code: str, lat: Optional[float], lon: Optional[float], radius_m: int
+) -> str:
     if lat is not None and lon is not None:
-        return f"(around:15000,{lat},{lon})"
+        return f"(around:{radius_m},{lat},{lon})"
     return f'(area["name"="{city}"]["boundary"="administrative"]["ISO3166-1"="{country_code}"])'
 
 
@@ -675,9 +725,10 @@ def fetch_zone_points(
     lon: Optional[float],
     zone_types: List[str],
     limit: int,
+    radius_m: int,
 ) -> List[dict]:
     zone_filter = "|".join(zone_types) if zone_types else "neighbourhood|suburb|quarter|district"
-    area_filter = build_area_filter(city, country_code, lat, lon)
+    area_filter = build_area_filter(city, country_code, lat, lon, radius_m)
     query = textwrap.dedent(
         f"""
         [out:json][timeout:25];
@@ -703,6 +754,7 @@ def fetch_competitor_points(
     lat: Optional[float],
     lon: Optional[float],
     limit: int,
+    radius_m: int,
 ) -> List[dict]:
     osm_tag = BUSINESS_OSM_MAP.get(category)
     if osm_tag:
@@ -711,7 +763,7 @@ def fetch_competitor_points(
     else:
         keyword = category.split()[0]
         filter_part = f'["name"~"{keyword}",i]'
-    area_filter = build_area_filter(city, country_code, lat, lon)
+    area_filter = build_area_filter(city, country_code, lat, lon, radius_m)
     query = textwrap.dedent(
         f"""
         [out:json][timeout:25];
@@ -754,6 +806,25 @@ def fetch_country_snapshot(country_code: str) -> Dict[str, Optional[float]]:
     return snapshot
 
 
+@st.cache_data(show_spinner=False, ttl=86400)
+def fetch_indicator_series(country_code: str, indicator: str, limit: int = 10) -> List[Tuple[int, float]]:
+    url = f"{WB_BASE}/country/{country_code}/indicator/{indicator}"
+    data = fetch_json(url, params={"format": "json", "per_page": str(limit)})
+    if not data or len(data) < 2:
+        return []
+    series = []
+    for row in data[1]:
+        value = row.get("value")
+        date = row.get("date")
+        if value is None or date is None:
+            continue
+        try:
+            series.append((int(date), float(value)))
+        except (TypeError, ValueError):
+            continue
+    return sorted(series, key=lambda x: x[0])
+
+
 def compute_city_score(
     city_population: Optional[int],
     gdp_pc: Optional[float],
@@ -777,6 +848,70 @@ def compute_city_score(
         + weights["growth"] * growth_score
         + weights["risk"] * risk
     )
+
+
+def compute_demand_index(
+    city_population: Optional[int],
+    density: Optional[float],
+    gdp_pc: Optional[float],
+) -> float:
+    pop_score = math.log(max(city_population or 1, 1))
+    density_score = math.log(max(density or 1, 1))
+    income_score = math.log(max(gdp_pc or 1, 1))
+    return pop_score * 0.5 + density_score * 0.3 + income_score * 0.2
+
+
+def get_help_answer(lang: str, question: str) -> str:
+    q = question.lower()
+    help_map = [
+        (["ranking", "score", "top"], "Usa el bloque de ranking para ajustar pesos y ver ciudades con mayor potencial."),
+        (["mapa", "map", "heatmap"], "Activa Mapa en la barra lateral; puedes activar Heatmap para densidad."),
+        (["competencia", "competition", "rival"], "Selecciona categoria y ajusta el radio para medir competencia."),
+        (["export", "descargar", "csv"], "En Exportar reportes puedes bajar CSV y reporte TXT."),
+        (["serie", "history", "historico"], "Series historicas muestra PIB, inflacion y desempleo por ano."),
+        (["alerta", "alerts"], "Alertas se activan cuando superan los umbrales del sidebar."),
+        (["watchlist", "seguimiento"], "Usa Agregar/Quitar para guardar pais y ciudad."),
+        (["recomend", "recommend"], "Recomendaciones sugiere categorias con baja competencia."),
+        (["zona", "zone", "suburb"], "Zonas se filtran por tipo en la multiseleccion."),
+        (["comparar", "compare"], "Comparar paises y ciudades esta en los bloques de comparacion."),
+    ]
+    for keywords, answer_es in help_map:
+        if any(key in q for key in keywords):
+            if lang == "en":
+                return {
+                    "Usa el bloque de ranking para ajustar pesos y ver ciudades con mayor potencial.": (
+                        "Use the ranking block to adjust weights and see top potential cities."
+                    ),
+                    "Activa Mapa en la barra lateral; puedes activar Heatmap para densidad.": (
+                        "Enable Map in the sidebar; toggle Heatmap for density."
+                    ),
+                    "Selecciona categoria y ajusta el radio para medir competencia.": (
+                        "Select a category and adjust the radius to measure competition."
+                    ),
+                    "En Exportar reportes puedes bajar CSV y reporte TXT.": (
+                        "In Export reports you can download CSV and a TXT report."
+                    ),
+                    "Series historicas muestra PIB, inflacion y desempleo por ano.": (
+                        "Historical series shows GDP, inflation, and unemployment by year."
+                    ),
+                    "Alertas se activan cuando superan los umbrales del sidebar.": (
+                        "Alerts trigger when thresholds in the sidebar are exceeded."
+                    ),
+                    "Usa Agregar/Quitar para guardar pais y ciudad.": (
+                        "Use Add/Remove to save country and city."
+                    ),
+                    "Recomendaciones sugiere categorias con baja competencia.": (
+                        "Recommendations suggest low-competition categories."
+                    ),
+                    "Zonas se filtran por tipo en la multiseleccion.": (
+                        "Zones are filtered by type in the multiselect."
+                    ),
+                    "Comparar paises y ciudades esta en los bloques de comparacion.": (
+                        "Country and city comparison live in the comparison blocks."
+                    ),
+                }.get(answer_es, t(lang, "assistant_unknown"))
+            return answer_es
+    return t(lang, "assistant_unknown")
 
 
 def build_csv(rows: List[Dict[str, object]], fieldnames: List[str]) -> str:
@@ -812,6 +947,8 @@ def main() -> None:
     st.set_page_config(page_title="Investment Radar", layout="wide")
 
     lang = st.sidebar.selectbox(t("en", "language"), ["es", "en"], index=0)
+    if "watchlist" not in st.session_state:
+        st.session_state.watchlist = []
     st.markdown(
         """
         <style>
@@ -923,7 +1060,9 @@ def main() -> None:
         alert_unemployment = st.slider(t(lang, "alert_unemployment"), 0.0, 50.0, 12.0, 0.5)
         alert_risk = st.slider(t(lang, "alert_risk"), -2.5, 2.5, -0.5, 0.1)
     max_points = st.sidebar.slider(t(lang, "max_points"), 50, 300, 150, 50)
+    radius_km = st.sidebar.slider(t(lang, "radius_km"), 1, 30, 10, 1)
     show_map = st.sidebar.checkbox(t(lang, "map_block"), value=False)
+    show_heatmap = st.sidebar.checkbox(t(lang, "heatmap"), value=False)
     show_best = st.sidebar.checkbox(t(lang, "best_categories"), value=False)
 
     gdp, gdp_year = fetch_indicator(selected_iso3, "NY.GDP.MKTP.CD")
@@ -981,6 +1120,46 @@ def main() -> None:
         st.warning(f"{t(lang, 'unemployment')}: {format_number(unemployment)}")
     if risk_score is not None and risk_score < alert_risk:
         st.warning(f"{t(lang, 'risk_score')}: {format_number(risk_score)}")
+
+    st.subheader(t(lang, "summary_block"))
+    indicator_values = [
+        gdp,
+        gdp_pc,
+        pop,
+        density,
+        inflation,
+        unemployment,
+        growth,
+        tax_revenue,
+        current_account,
+        median_age,
+        urbanization,
+        labor_force,
+        risk_score,
+    ]
+    available = sum(1 for value in indicator_values if value is not None)
+    data_quality = available / len(indicator_values) * 100
+    summary1, summary2, summary3 = st.columns(3)
+    demand_index = compute_demand_index(None, density, gdp_pc)
+    composite_score = compute_city_score(
+        None,
+        gdp_pc,
+        inflation,
+        unemployment,
+        growth,
+        risk_score,
+        {
+            "population": weight_population,
+            "gdp_pc": weight_gdp_pc,
+            "inflation": weight_inflation,
+            "unemployment": weight_unemployment,
+            "growth": weight_growth,
+            "risk": weight_risk,
+        },
+    )
+    summary1.metric(t(lang, "composite_score"), format_number(composite_score))
+    summary2.metric(t(lang, "demand_index"), format_number(demand_index))
+    summary3.metric(t(lang, "data_quality"), f"{data_quality:.0f}%")
 
     cities = fetch_worldcities(selected_iso2)
     if not cities:
@@ -1054,6 +1233,35 @@ def main() -> None:
     ranked = sorted(ranked, key=lambda x: x[1], reverse=True)[:10]
     st.table({"City": [c for c, _ in ranked], "Score": [format_number(s) for _, s in ranked]})
 
+    st.subheader(t(lang, "compare_cities"))
+    compare_city_names = st.multiselect(
+        t(lang, "compare_cities"),
+        [city.name for city in top_cities],
+        default=[city.name for city in top_cities[:3]],
+    )
+    if compare_city_names:
+        compare_rows = []
+        for city in top_cities:
+            if city.name not in compare_city_names:
+                continue
+            compare_rows.append(
+                {
+                    "city": city.name,
+                    "population": city.population or 0,
+                    "score": compute_city_score(
+                        city.population,
+                        gdp_pc,
+                        inflation,
+                        unemployment,
+                        growth,
+                        risk_score,
+                        weights,
+                    ),
+                }
+            )
+        df_compare = pd.DataFrame(compare_rows).set_index("city")
+        st.bar_chart(df_compare[["population", "score"]], use_container_width=True)
+
     city_names = []
     city_by_name = {}
     seen = set()
@@ -1064,6 +1272,18 @@ def main() -> None:
             city_by_name[city.name] = city
     city_choice = st.selectbox(t(lang, "city"), city_names)
     st.caption(t(lang, "investment_hint"))
+
+    watch_col1, watch_col2 = st.columns(2)
+    if watch_col1.button(t(lang, "add_watchlist")):
+        st.session_state.watchlist.append(
+            {"country": selected_name, "city": city_choice, "added": datetime.utcnow().isoformat()}
+        )
+    if watch_col2.button(t(lang, "remove_watchlist")):
+        st.session_state.watchlist = [
+            item
+            for item in st.session_state.watchlist
+            if not (item["country"] == selected_name and item["city"] == city_choice)
+        ]
 
     selected_city = city_by_name.get(city_choice)
     city_cost = fetch_city_cost_m2(city_choice, selected_name)
@@ -1077,11 +1297,15 @@ def main() -> None:
         else:
             potential_clients = selected_city.population
 
+    city_demand = compute_demand_index(
+        selected_city.population if selected_city else None, density, gdp_pc
+    )
     st.subheader(t(lang, "housing_block"))
-    house1, house2, house3 = st.columns(3)
+    house1, house2, house3, house4 = st.columns(4)
     house1.metric(t(lang, "cost_m2"), format_number(city_cost))
     house2.metric(t(lang, "rent_month"), format_number(city_rent))
     house3.metric(t(lang, "potential_clients"), format_number(potential_clients))
+    house4.metric(t(lang, "demand_index"), format_number(city_demand))
 
     st.subheader(t(lang, "business_category"))
     search_term = st.text_input(t(lang, "search_business"))
@@ -1122,11 +1346,35 @@ def main() -> None:
         category_choice,
         selected_city.lat if selected_city else None,
         selected_city.lon if selected_city else None,
+        radius_km * 1000,
     )
     if competitors:
         st.metric(t(lang, "competition_count"), competitors)
     else:
         st.info(t(lang, "category_empty"))
+
+    st.subheader(t(lang, "recommendations"))
+    st.caption(t(lang, "recommendation_note"))
+    rec_candidates = list(BUSINESS_OSM_MAP.keys())[:6]
+    rec_rows = []
+    for category in rec_candidates:
+        count = fetch_competitors(
+            city_choice,
+            selected_iso2,
+            category,
+            selected_city.lat if selected_city else None,
+            selected_city.lon if selected_city else None,
+            radius_km * 1000,
+        )
+        score = city_demand / max(count + 1, 1)
+        rec_rows.append({"category": category, "score": score, "competitors": count})
+    rec_rows = sorted(rec_rows, key=lambda x: x["score"], reverse=True)[:3]
+    st.table(
+        {
+            t(lang, "table_category"): [row["category"] for row in rec_rows],
+            t(lang, "table_competitors"): [row["competitors"] for row in rec_rows],
+        }
+    )
 
     if show_map:
         st.subheader(t(lang, "map_block"))
@@ -1138,6 +1386,7 @@ def main() -> None:
                 selected_city.lon,
                 zone_types,
                 max_points,
+                radius_km * 1000,
             )
             competitor_points = fetch_competitor_points(
                 city_choice,
@@ -1146,6 +1395,7 @@ def main() -> None:
                 selected_city.lat,
                 selected_city.lon,
                 max_points,
+                radius_km * 1000,
             )
             if zone_points or competitor_points:
                 layers = []
@@ -1171,6 +1421,15 @@ def main() -> None:
                             pickable=True,
                         )
                     )
+                    if show_heatmap:
+                        layers.append(
+                            pdk.Layer(
+                                "HeatmapLayer",
+                                data=competitor_points,
+                                get_position="[lon, lat]",
+                                radius_pixels=60,
+                            )
+                        )
                 view = pdk.ViewState(
                     latitude=selected_city.lat,
                     longitude=selected_city.lon,
@@ -1198,6 +1457,7 @@ def main() -> None:
                 category,
                 selected_city.lat if selected_city else None,
                 selected_city.lon if selected_city else None,
+                radius_km * 1000,
             )
             best_rows.append({"category": category, "competitors": count})
             progress.progress(idx / len(best_candidates))
@@ -1220,6 +1480,36 @@ def main() -> None:
         compare_rows.append(snapshot)
     if compare_rows:
         st.dataframe(compare_rows, use_container_width=True)
+
+    st.subheader(t(lang, "series_block"))
+    st.caption(t(lang, "series_hint"))
+    series_gdp = fetch_indicator_series(selected_iso3, "NY.GDP.MKTP.CD", 12)
+    series_inflation = fetch_indicator_series(selected_iso3, "FP.CPI.TOTL.ZG", 12)
+    series_unemployment = fetch_indicator_series(selected_iso3, "SL.UEM.TOTL.ZS", 12)
+    if series_gdp:
+        df_series = pd.DataFrame(
+            {
+                "year": [y for y, _ in series_gdp],
+                "gdp": [v for _, v in series_gdp],
+            }
+        ).set_index("year")
+        st.line_chart(df_series, use_container_width=True)
+    if series_inflation:
+        df_inflation = pd.DataFrame(
+            {
+                "year": [y for y, _ in series_inflation],
+                "inflation": [v for _, v in series_inflation],
+            }
+        ).set_index("year")
+        st.line_chart(df_inflation, use_container_width=True)
+    if series_unemployment:
+        df_unemployment = pd.DataFrame(
+            {
+                "year": [y for y, _ in series_unemployment],
+                "unemployment": [v for _, v in series_unemployment],
+            }
+        ).set_index("year")
+        st.line_chart(df_unemployment, use_container_width=True)
 
     st.subheader(t(lang, "exports_block"))
     country_rows = [
@@ -1281,6 +1571,34 @@ def main() -> None:
         file_name=f"report_{selected_iso3}.txt",
         mime="text/plain",
     )
+
+    st.subheader(t(lang, "watchlist"))
+    if st.session_state.watchlist:
+        st.dataframe(st.session_state.watchlist, use_container_width=True)
+        watchlist_csv = build_csv(st.session_state.watchlist, ["country", "city", "added"])
+        st.download_button(
+            t(lang, "export_watchlist"),
+            data=watchlist_csv,
+            file_name="watchlist.csv",
+            mime="text/csv",
+        )
+    else:
+        st.info(t(lang, "watchlist_empty"))
+
+    st.subheader(t(lang, "assistant_block"))
+    st.caption(t(lang, "assistant_intro"))
+    if "assistant_messages" not in st.session_state:
+        st.session_state.assistant_messages = []
+    for msg in st.session_state.assistant_messages:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+    user_question = st.chat_input(t(lang, "assistant_placeholder"))
+    if user_question:
+        st.session_state.assistant_messages.append({"role": "user", "content": user_question})
+        answer = get_help_answer(lang, user_question)
+        st.session_state.assistant_messages.append({"role": "assistant", "content": answer})
+        with st.chat_message("assistant"):
+            st.write(answer)
 
     st.subheader(t(lang, "data_notes"))
     st.write(t(lang, "sources"))
