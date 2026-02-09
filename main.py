@@ -1642,19 +1642,19 @@ def main() -> None:
     else:
         st.info(t(lang, "watchlist_empty"))
 
-    st.subheader(t(lang, "assistant_block"))
-    st.caption(t(lang, "assistant_intro"))
-    if "assistant_messages" not in st.session_state:
-        st.session_state.assistant_messages = []
-    for msg in st.session_state.assistant_messages:
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
-    user_question = st.text_input(t(lang, "assistant_placeholder"), key="assistant_input")
-    if st.button(t(lang, "assistant_send"), key="assistant_send") and user_question:
-        st.session_state.assistant_messages.append({"role": "user", "content": user_question})
-        answer = get_help_answer(lang, user_question)
-        st.session_state.assistant_messages.append({"role": "assistant", "content": answer})
-        st.session_state.assistant_input = ""
+    with st.expander(t(lang, "assistant_block"), expanded=False):
+        st.caption(t(lang, "assistant_intro"))
+        if "assistant_messages" not in st.session_state:
+            st.session_state.assistant_messages = []
+        for msg in st.session_state.assistant_messages:
+            with st.chat_message(msg["role"]):
+                st.write(msg["content"])
+        user_question = st.text_input(t(lang, "assistant_placeholder"), key="assistant_input")
+        if st.button(t(lang, "assistant_send"), key="assistant_send") and user_question:
+            st.session_state.assistant_messages.append({"role": "user", "content": user_question})
+            answer = get_help_answer(lang, user_question)
+            st.session_state.assistant_messages.append({"role": "assistant", "content": answer})
+            st.session_state.assistant_input = ""
 
     st.subheader(t(lang, "data_notes"))
     st.write(t(lang, "sources"))
