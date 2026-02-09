@@ -1027,7 +1027,7 @@ def main() -> None:
         div[data-testid="stPopover"] {
             position: fixed;
             right: 18px;
-            bottom: 18px;
+            top: 18px;
             z-index: 1000;
         }
         div[data-testid="stPopover"] > button {
